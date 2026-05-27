@@ -361,7 +361,7 @@
 // ── Supabase Configuration ──────────────────────────────────────────────────
 const SB_URL = 'https://pgvaffnvcuakanktpfqq.supabase.co';
 const SB_KEY = 'sb_publishable_tsOEq55dxOthKG2AOT28Aw_jWIfuzHA';
-const supabase = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+const sbClient = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY) : null;
 
 // ── Emote data URIs ──────────────────
 const EMOTES_1ST = [
@@ -623,10 +623,10 @@ function clearManualGames() {
 
 // ── Supabase ──────────────────
 async function fetchGlobalHistory() {
-  if (!supabase) return;
+  if (!sbClient) return;
   const container = document.getElementById('globalHistory');
   try {
-    const { data, error } = await supabase.from('matches').select('*').order('created_at', { ascending: false }).limit(10);
+    const { data, error } = await sbClient.from('matches').select('*').order('created_at', { ascending: false }).limit(10);
     if (error) throw error;
     if (!data || data.length === 0) {
       container.innerHTML = '<div style="text-align:center; padding: 20px; opacity: 0.5;">No global matches yet.</div>';
@@ -644,12 +644,12 @@ async function fetchGlobalHistory() {
 }
 
 async function submitToGlobal(btn) {
-  if (!supabase || !currentMerged.dataPoints.length) return;
+  if (!sbClient || !currentMerged.dataPoints.length) return;
   const original = btn.innerHTML;
   try {
     btn.disabled = true; btn.innerHTML = 'UPLOADING...';
     const latest = getRankingResults(currentMerged.dataPoints, currentMerged.players);
-    const { error } = await supabase.from('matches').insert([{ player_data: latest.map(p => ({ name: p.name, delta: p.total })), match_count: currentMerged.dataPoints.length - 1 }]);
+    const { error } = await sbClient.from('matches').insert([{ player_data: latest.map(p => ({ name: p.name, delta: p.total })), match_count: currentMerged.dataPoints.length - 1 }]);
     if (error) throw error;
     btn.innerHTML = 'PUBLISHED!';
     fetchGlobalHistory();
