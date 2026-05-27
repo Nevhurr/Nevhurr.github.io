@@ -361,7 +361,7 @@
 // ── Supabase Configuration ──────────────────────────────────────────────────
 const SB_URL = 'https://pgvaffnvcuakanktpfqq.supabase.co';
 const SB_KEY = 'sb_publishable_tsOEq55dxOthKG2AOT28Aw_jWIfuzHA';
-const supabase = typeof supabase !== 'undefined' ? supabase : (window.supabase ? window.supabase.createClient(SB_URL, SB_KEY) : null);
+const supabase = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY) : null;
 
 // ── Emote data URIs ──────────────────
 const EMOTES_1ST = [
