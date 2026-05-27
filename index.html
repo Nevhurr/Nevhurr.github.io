@@ -466,13 +466,13 @@ Tianshi : +51.5 (+8.8)`;
 
 // ── Parser ────────────────────────────────────────────────────────────────────
 // Matches: PlayerName : [=] score [(delta)]
-const SCORE_RE = /^([A-Za-z\u00C0-\u024F]+)\s*:\s*=?\s*([\+\-]?\d+(?:\.\d+)?)\s*(?:\(.*\))?\s*$/;
+const SCORE_RE = /^([A-Za-z\u00C0-\u024F]+)\s*:\s*[=\s]*([\+\-\u2212]?\d+(?:[\.,]\d+)?)\s*(?:\(.*\))?\s*$/;
 
 function parseDate(str) {
   str = str.trim();
   let m;
   // DD/MM/YYYY HH:MM
-  if ((m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/)))
+  if ((m = str.match(/^(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4})\s+(\d{1,2}):(\d{2})$/)))
     return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]);
   // "Hier à HH:MM" (French "yesterday at")
   if ((m = str.match(/hier\s+[àa]\s+(\d{1,2}):(\d{2})/i))) {
@@ -498,7 +498,7 @@ function parse(text) {
 
   function commit() {
     if (Object.keys(pending).length >= 2) {
-      dataPoints.push({ date, scores: Object.assign(Object.create(null), pending) });
+      dataPoints.push({ date: date || new Date(), scores: Object.assign(Object.create(null), pending) });
       Object.keys(pending).forEach(p => knownPlayers.add(p));
       pending = Object.create(null);
     }
@@ -509,9 +509,10 @@ function parse(text) {
     if (!line) continue;
 
     // Detect message header (author — timestamp)
-    const eIdx = line.indexOf('—');
-    if (eIdx > 0) {
-      const d = parseDate(line.slice(eIdx + 1));
+    // Support both em-dash (—) and en-dash (–) and hyphen (-) if surrounded by spaces
+    const dashIdx = line.search(/[—–]| \- /);
+    if (dashIdx !== -1) {
+      const d = parseDate(line.slice(dashIdx + 1));
       if (d) { commit(); date = d; continue; }
     }
 
@@ -519,7 +520,8 @@ function parse(text) {
     const m = line.match(SCORE_RE);
     if (m) {
       const name = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
-      pending[name] = parseFloat(m[2]);
+      // Handle both . and , as decimal separators
+      pending[name] = parseFloat(m[2].replace(',', '.').replace('\u2212', '-'));
     }
   }
   commit();
