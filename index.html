@@ -311,6 +311,16 @@
     <div class="jp-sub">MahJONJ Parser · 3-Seat Edition</div>
   </header>
 
+  <div class="card" style="margin-bottom: 32px; background: rgba(13, 13, 26, 0.6); border-color: var(--gold);">
+    <div class="card-label" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>🌐 GLOBAL HALL OF FAME</span>
+      <span id="syncStatus" style="font-size: 0.7rem; opacity: 0.7;">CONNECTED</span>
+    </div>
+    <div id="globalHistory">
+      <div class="loading-spinner">RETRACING HISTORY...</div>
+    </div>
+  </div>
+
   <div class="top-grid" style="grid-template-columns: 1fr; max-width: 600px; margin-left: auto; margin-right: auto;">
     <div class="card">
       <div class="card-label">Custom Entry</div>
@@ -344,15 +354,6 @@
     </div>
   </div>
 
-  <div class="card" style="margin-top: 30px; background: rgba(13, 13, 26, 0.6); border-style: dashed; border-width: 2px;">
-    <div class="card-label" style="display: flex; justify-content: space-between; align-items: center;">
-      <span>🌐 GLOBAL HALL OF FAME</span>
-      <span id="syncStatus" style="font-size: 0.7rem; opacity: 0.7;">CONNECTED</span>
-    </div>
-    <div id="globalHistory">
-      <div class="loading-spinner">RETRACING HISTORY...</div>
-    </div>
-  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -386,6 +387,7 @@ const EMOTES_3RD = [
 let chart = null;
 let manualGames = [];
 let currentMerged = { dataPoints: [], players: [] };
+let globalChart = null;
 
 // ── Helpers ──────────────────
 function normalizeName(name) {
@@ -626,20 +628,72 @@ async function fetchGlobalHistory() {
   if (!sbClient) return;
   const container = document.getElementById('globalHistory');
   try {
-    const { data, error } = await sbClient.from('matches').select('*').order('created_at', { ascending: false }).limit(10);
+    const { data, error } = await sbClient.from('matches').select('*').order('created_at', { ascending: true }).limit(30);
     if (error) throw error;
     if (!data || data.length === 0) {
       container.innerHTML = '<div style="text-align:center; padding: 20px; opacity: 0.5;">No global matches yet.</div>';
       return;
     }
-    let html = '<table class="history-table"><thead><tr><th>DATE</th><th>PLAYERS</th><th>GAMES</th></tr></thead><tbody>';
-    data.forEach(m => {
-      const date = new Date(m.created_at).toLocaleDateString();
-      const players = m.player_data.map(p => `${p.name} (${fmtScore(p.delta)})`).join(', ');
-      html += `<tr><td class="history-date">${date}</td><td class="history-players">${players}</td><td>${m.match_count}</td></tr>`;
+
+    const playersSet = new Set();
+    data.forEach(m => m.player_data.forEach(p => playersSet.add(p.name)));
+    const players = [...playersSet];
+
+    const labels = data.map((m, i) => {
+      const d = new Date(m.created_at);
+      return `S${i + 1} · ` + d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
     });
-    html += '</tbody></table>';
-    container.innerHTML = html;
+
+    const datasets = players.map((name, idx) => {
+      const color = PALETTE[idx % PALETTE.length];
+      return {
+        label: name,
+        data: data.map(m => {
+          const entry = m.player_data.find(p => p.name === name);
+          return entry ? entry.delta : null;
+        }),
+        borderColor: color,
+        backgroundColor: color + '18',
+        tension: 0.35,
+        pointRadius: 6,
+        pointHoverRadius: 10,
+        pointBorderWidth: 3,
+        pointBackgroundColor: '#fff',
+        pointBorderColor: color,
+        borderWidth: 3,
+        fill: false,
+        spanGaps: true,
+      };
+    });
+
+    container.innerHTML = '<div class="chart-wrapper" style="height: 380px;"><canvas id="globalHistoryChart"></canvas></div>';
+
+    if (globalChart) globalChart.destroy();
+    globalChart = new Chart(document.getElementById('globalHistoryChart'), {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#f5e7c1', font: { size: 13, weight: '700', family: "'M PLUS Rounded 1c', sans-serif" }, usePointStyle: true } },
+          tooltip: {
+            backgroundColor: '#1a1b2f', borderColor: '#d4af37', borderWidth: 2, cornerRadius: 12, padding: 12,
+            callbacks: {
+              title: items => {
+                const m = data[items[0].dataIndex];
+                return `Session ${items[0].dataIndex + 1}  ·  ${new Date(m.created_at).toLocaleDateString('fr-FR')}  ·  ${m.match_count} games`;
+              },
+              label: item => `  ${item.dataset.label}: ${fmtScore(item.raw)}`
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#8890c0' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#8890c0', callback: v => (v >= 0 ? '+' : '') + v }, grid: { color: ctx => ctx.tick.value === 0 ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.05)', lineWidth: ctx => ctx.tick.value === 0 ? 2 : 1 } }
+        }
+      }
+    });
   } catch (err) { container.innerHTML = '<div>Error loading history.</div>'; }
 }
 
