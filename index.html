@@ -635,32 +635,43 @@ async function fetchGlobalHistory() {
       return;
     }
 
+    // Flatten all sessions into per-game points, prefixed with session index
     const playersSet = new Set();
     data.forEach(m => m.player_data.forEach(p => playersSet.add(p.name)));
     const players = [...playersSet];
 
-    const labels = data.map((m, i) => {
-      const d = new Date(m.created_at);
-      return `S${i + 1} · ` + d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    // Build a flat list of { label, sessionIdx, gameIdx, scores } from game_history
+    const flatPoints = [];
+    data.forEach((m, si) => {
+      const history = m.game_history;
+      if (history && history.length > 0) {
+        history.forEach((g, gi) => {
+          flatPoints.push({ label: `G${g.game}`, sessionIdx: si, gameIdx: gi, scores: g.scores, date: g.date });
+        });
+      } else {
+        // Fallback for old rows: single point using cumulative totals
+        const scores = Object.fromEntries(m.player_data.map(p => [p.name, p.delta]));
+        flatPoints.push({ label: `S${si + 1}`, sessionIdx: si, gameIdx: 0, scores, date: m.created_at });
+      }
     });
+
+    const labels = flatPoints.map(fp => fp.label);
 
     const datasets = players.map((name, idx) => {
       const color = PALETTE[idx % PALETTE.length];
+      const lastIdx = flatPoints.length - 1;
       return {
         label: name,
-        data: data.map(m => {
-          const entry = m.player_data.find(p => p.name === name);
-          return (entry && m.match_count) ? +(entry.delta / m.match_count).toFixed(2) : null;
-        }),
+        data: flatPoints.map(fp => fp.scores[name] ?? null),
         borderColor: color,
         backgroundColor: color + '18',
         tension: 0.35,
-        pointRadius: 6,
+        pointRadius: ctx => ctx.dataIndex === lastIdx ? 8 : 4,
         pointHoverRadius: 10,
-        pointBorderWidth: 3,
-        pointBackgroundColor: '#fff',
+        pointBorderWidth: ctx => ctx.dataIndex === lastIdx ? 3 : 1,
+        pointBackgroundColor: ctx => ctx.dataIndex === lastIdx ? '#fff' : color,
         pointBorderColor: color,
-        borderWidth: 3,
+        borderWidth: 2.5,
         fill: false,
         spanGaps: true,
       };
@@ -681,16 +692,17 @@ async function fetchGlobalHistory() {
             backgroundColor: '#1a1b2f', borderColor: '#d4af37', borderWidth: 2, cornerRadius: 12, padding: 12,
             callbacks: {
               title: items => {
-                const m = data[items[0].dataIndex];
-                return `Session ${items[0].dataIndex + 1}  ·  ${new Date(m.created_at).toLocaleDateString('fr-FR')}  ·  ${m.match_count} games`;
+                const fp = flatPoints[items[0].dataIndex];
+                const dateStr = fp.date ? new Date(fp.date).toLocaleDateString('fr-FR') : '';
+                return `Game ${items[0].dataIndex + 1}${dateStr ? '  ·  ' + dateStr : ''}`;
               },
-              label: item => `  ${item.dataset.label}: ${fmtScore(item.raw)} / game`
+              label: item => `  ${item.dataset.label}: ${fmtScore(item.raw)}`
             }
           }
         },
         scales: {
-          x: { ticks: { color: '#8890c0' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-          y: { title: { display: true, text: 'avg score / game', color: '#8890c0', font: { size: 11 } }, ticks: { color: '#8890c0', callback: v => (v >= 0 ? '+' : '') + v }, grid: { color: ctx => ctx.tick.value === 0 ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.05)', lineWidth: ctx => ctx.tick.value === 0 ? 2 : 1 } }
+          x: { ticks: { color: '#8890c0', maxTicksLimit: 20 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#8890c0', callback: v => (v >= 0 ? '+' : '') + v }, grid: { color: ctx => ctx.tick.value === 0 ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.05)', lineWidth: ctx => ctx.tick.value === 0 ? 2 : 1 } }
         }
       }
     });
@@ -703,7 +715,8 @@ async function submitToGlobal(btn) {
   try {
     btn.disabled = true; btn.innerHTML = 'UPLOADING...';
     const latest = getRankingResults(currentMerged.dataPoints, currentMerged.players);
-    const { error } = await sbClient.from('matches').insert([{ player_data: latest.map(p => ({ name: p.name, delta: p.total })), match_count: currentMerged.dataPoints.length - 1 }]);
+    const gameHistory = currentMerged.dataPoints.slice(1).map((dp, i) => ({ game: i + 1, date: dp.date ? dp.date.toISOString() : null, scores: dp.scores }));
+    const { error } = await sbClient.from('matches').insert([{ player_data: latest.map(p => ({ name: p.name, delta: p.total })), match_count: currentMerged.dataPoints.length - 1, game_history: gameHistory }]);
     if (error) throw error;
     btn.innerHTML = 'PUBLISHED!';
     fetchGlobalHistory();
